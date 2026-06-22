@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: #020617;
+  color: #e2e8f0;
+}
+
+.thinking-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Scrollbars — always visible so users can drag to any point in the conversation */
+::-webkit-scrollbar          { width: 8px; height: 8px; }
+::-webkit-scrollbar-track    { background: #0f172a; border-radius: 99px; }
+::-webkit-scrollbar-thumb    { background: #334155; border-radius: 99px; border: 2px solid #0f172a; }
+::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+/* Force the conversation scrollbar to always show (not just on hover/scroll) */
+.conversation-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 #0f172a;
+  overflow-y: scroll !important;
+}
+
+/* Prose table borders in dark mode — scrollable when wide */
+.prose table  { border-collapse: collapse; min-width: 100%; white-space: nowrap; }
+.prose th, .prose td { border: 1px solid #334155 !important; padding: 6px 12px !important; }
+.prose thead  { background: #1e293b; }
