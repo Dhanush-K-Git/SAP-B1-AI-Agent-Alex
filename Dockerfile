@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 # Set working directory
-WORKDIR /app
+WORKDIR /backend/app
 
 # Install system packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
