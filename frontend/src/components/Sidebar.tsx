@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { SessionInfo } from "../types";
 import { useStore } from "../store";
 import { deleteSession } from "../api";
+import DocumentPanel from "./DocumentPanel";
 
 export default function Sidebar({
   sessions,
@@ -92,6 +93,14 @@ export default function Sidebar({
             </button>
           </div>
         ))}
+      </div>
+
+      {/* Document Upload Section */}
+      <div className="border-t border-slate-700 p-3">
+        <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Documents (RAG)
+        </p>
+        <DocumentPanel />
       </div>
 
       <div className="border-t border-slate-700 p-3">

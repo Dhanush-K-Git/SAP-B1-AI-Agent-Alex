@@ -220,6 +220,9 @@ _SUMMARY_SYSTEM = (
     "Write the word SUMMARY on its own line, then 2-3 bold sentences of prose ONLY.\n"
     "Rules:\n"
     "- Prose sentences only. No pipe characters. No table rows. No bullet points.\n"
+    "- FIRST sentence must state the data scope: the exact time period covered OR that it is full historical data. "
+    "Examples: 'This report covers the **last 12 months** (April 2024 – March 2025).' or "
+    "'This analysis covers the **complete dataset** across all available records.'\n"
     "- State the most important finding, the overall pattern, and one business implication.\n"
     "- Only use data that exists in the result. Never invent figures.\n\n"
 
@@ -288,6 +291,24 @@ _OFF_TOPIC_SYSTEM = (
     "sales, invoices, inventory, customers, purchasing, and finance — and cannot answer this type of question. "
     "Then suggest **3 example questions** they could ask, formatted as a bold numbered list. "
     "Be warm, professional, and concise — no emojis."
+)
+
+_SQL_VALIDATE_SYSTEM = (
+    "You are an SAP B1 HANA SQL reviewer. Given a user question and a generated SQL query, "
+    "check if the SQL will correctly answer the question.\n\n"
+    "CHECK FOR:\n"
+    "1. Wrong table used (e.g. OINV instead of ORCT for payment questions)\n"
+    "2. Missing JOIN that is needed to get the requested data\n"
+    "3. Wrong date filter (e.g. filtering by CURRENT_DATE instead of MAX(DocDate))\n"
+    "4. Wrong aggregation (e.g. COUNT when SUM is needed)\n"
+    "5. UNION ALL or FROM (subquery) — both cause HTTP 404 on this server\n"
+    "6. CTE (WITH ... AS) — causes HTTP 403 on this server\n"
+    "7. Column names that don't exist (e.g. State instead of State1, CANCELED instead of DocStatus)\n"
+    "8. DocStatus filter on ORCT or OVPM — not valid on payment tables\n\n"
+    "Respond with ONLY a JSON object:\n"
+    '{"valid": true} if the SQL looks correct.\n'
+    '{"valid": false, "issue": "one sentence describing the problem", "fix": "one sentence describing how to fix it"} if there is a problem.\n\n'
+    "Be strict but fair. Only flag real problems, not style issues."
 )
 
 _FOLLOWUP_SYSTEM = (
@@ -375,10 +396,10 @@ class ClaudeClient:
                 thinking_cfg: dict = {"type": "adaptive", "display": "summarized"}
                 max_tok = 16000
             else:
-                # Sonnet: fixed budget cap — 5 000 tokens is enough for any SQL query.
-                # Adaptive can burn 10 000+ tokens on a simple question; this cuts it by ~60%.
-                thinking_cfg = {"type": "enabled", "budget_tokens": 5000}
-                max_tok = 9000  # 5 000 thinking + 4 000 text (complex CASE queries need room)
+                # Sonnet: fixed budget cap — 2 000 tokens covers all SQL reasoning without
+                # burning time on simple questions. Saves 3–10 s vs 5 000 budget.
+                thinking_cfg = {"type": "enabled", "budget_tokens": 2000}
+                max_tok = 6000  # 2 000 thinking + 4 000 text
         else:
             thinking_cfg = {}
             max_tok = 4000  # pure text, no thinking overhead
@@ -478,6 +499,21 @@ class ClaudeClient:
         if vague_patterns.match(q):
             return True
         return False
+
+    async def validate_sql_with_claude(self, question: str, sql: str) -> dict:
+        """
+        Use Haiku to review the generated SQL against the question.
+        Returns {"valid": True} or {"valid": False, "issue": "...", "fix": "..."}
+        """
+        user = f"User question: {question}\n\nGenerated SQL:\n```sql\n{sql}\n```"
+        resp = await self._client.messages.create(
+            model=self._settings.claude_fast_model,
+            max_tokens=200,
+            system=_SQL_VALIDATE_SYSTEM,
+            messages=[{"role": "user", "content": user}],
+        )
+        text = "".join(b.text for b in resp.content if b.type == "text")
+        return _safe_json(text, default={"valid": True})
 
     async def ask_clarification(self, question: str) -> str:
         """Generate a clarifying response asking the user to be more specific."""

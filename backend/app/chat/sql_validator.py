@@ -159,6 +159,13 @@ def sanitize_sql(sql: str) -> tuple[str, list[str]]:
             warnings.append('Auto-fixed: "State" → "State1" (correct SAP B1 OCRD column name).')
             sql = fixed
 
+    # Fix 5: CURRENT_DATE in WHERE/date filters — data ends ~2025-03-25 so this returns 0 rows
+    if re.search(r'\bCURRENT_DATE\b', sql, re.IGNORECASE):
+        warnings.append(
+            "CURRENT_DATE detected — historical data ends ~2025-03-25, CURRENT_DATE returns zero rows. "
+            "Replace with: ADD_MONTHS((SELECT MAX(\"DocDate\") FROM <table>), -N) to anchor on the data's latest date."
+        )
+
     # Fix 4: Strip any condition using the non-existent CANCELED column
     if _FORBIDDEN_FIELDS.search(sql):
         # Remove the entire AND/OR clause containing CANCELED

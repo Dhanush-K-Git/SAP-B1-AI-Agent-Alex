@@ -1,13 +1,31 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export default function MessageInput({
   onSend,
   busy,
+  prefill,
+  onPrefillConsumed,
 }: {
   onSend: (q: string) => void;
   busy: boolean;
+  prefill?: string;
+  onPrefillConsumed?: () => void;
 }) {
   const [text, setText] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // When parent injects a prefill (edit), populate and focus
+  useEffect(() => {
+    if (prefill !== undefined && prefill !== "") {
+      setText(prefill);
+      onPrefillConsumed?.();
+      setTimeout(() => {
+        textareaRef.current?.focus();
+        const len = prefill.length;
+        textareaRef.current?.setSelectionRange(len, len);
+      }, 50);
+    }
+  }, [prefill]);
 
   function submit() {
     const q = text.trim();
@@ -20,6 +38,7 @@ export default function MessageInput({
     <div className="border-t border-slate-700 bg-slate-900 p-3">
       <div className="mx-auto flex max-w-3xl items-end gap-2">
         <textarea
+          ref={textareaRef}
           rows={1}
           value={text}
           onChange={(e) => setText(e.target.value)}

@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     # ── Web search (optional, for forecast/benchmark context) ────────────────
     tavily_api_key: str = ""
 
+    # SAP B1 Service Layer — transactional (create/update/cancel/close)
+    # Standard SAP B1 SL REST API. Leave blank to disable CRUD endpoints.
+    sap_sl_base_url: str = "https://vzone.in:50000/b1s/v2"  # SAP B1 Service Layer for CRUD
+    sap_sl_company: str = ""        # CompanyDB name
+    sap_sl_username: str = ""       # SAP B1 username
+    sap_sl_password: str = ""       # SAP B1 password
+
     # ── Demo auth (hardcoded login) ──────────────────────────────────────────
     demo_username: str = "admin"
     demo_password: str = "demo"

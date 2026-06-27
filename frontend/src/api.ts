@@ -35,6 +35,39 @@ export async function fetchExampleQuestions(): Promise<ExampleQuestion[]> {
   return res.json();
 }
 
+// ── RAG Document APIs ─────────────────────────────────────────────────────────
+
+export interface RagDocument {
+  id: string;
+  filename: string;
+  file_type: string;
+  file_size: number;
+  chunk_count: number;
+  uploaded_at: string;
+}
+
+export async function fetchDocuments(): Promise<RagDocument[]> {
+  const res = await fetch(`${BASE}/api/documents`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function uploadDocument(file: File): Promise<RagDocument> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${BASE}/api/documents/upload`, { method: "POST", body: form });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "Upload failed" }));
+    throw new Error(err.detail || "Upload failed");
+  }
+  return res.json();
+}
+
+export async function deleteDocument(docId: string): Promise<boolean> {
+  const res = await fetch(`${BASE}/api/documents/${docId}`, { method: "DELETE" });
+  return res.ok;
+}
+
 export interface AskBody {
   question: string;
   session_id: string | null;

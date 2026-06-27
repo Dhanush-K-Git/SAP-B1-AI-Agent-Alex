@@ -94,3 +94,30 @@ CREATE TABLE IF NOT EXISTS turns (
 );
 
 CREATE INDEX IF NOT EXISTS ix_turns_session             ON turns (session_id, created_at);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- RAG document store (uploaded files)
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS rag_documents (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    filename        TEXT NOT NULL,
+    file_type       TEXT NOT NULL,              -- 'pdf' | 'docx' | 'xlsx' | 'txt'
+    file_size       INT NOT NULL DEFAULT 0,
+    chunk_count     INT NOT NULL DEFAULT 0,
+    uploaded_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS rag_chunks (
+    id              BIGSERIAL PRIMARY KEY,
+    doc_id          UUID NOT NULL REFERENCES rag_documents(id) ON DELETE CASCADE,
+    chunk_index     INT NOT NULL,
+    content         TEXT NOT NULL,
+    embedding       vector({{EMBED_DIM}}),
+    UNIQUE (doc_id, chunk_index)
+);
+
+CREATE INDEX IF NOT EXISTS ix_rag_chunks_doc            ON rag_chunks (doc_id);
+CREATE INDEX IF NOT EXISTS ix_rag_chunks_hnsw
+    ON rag_chunks USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 128)
+    WHERE embedding IS NOT NULL;

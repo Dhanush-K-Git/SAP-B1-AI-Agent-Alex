@@ -33,14 +33,15 @@ export default function ChatScreen() {
   const [busy, setBusy] = useState(false);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loadingSession, setLoadingSession] = useState(false);
+  const [editPrefill, setEditPrefill] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const refreshSessions = useCallback(() => {
     fetchSessions().then(setSessions).catch(() => {});
   }, []);
 
   // Smart scroll — only scrolls if the user is already near the bottom.
-  // If they've scrolled up to read, we leave them alone.
   function scrollToBottom() {
     const el = scrollRef.current;
     if (!el) return;
@@ -52,11 +53,15 @@ export default function ChatScreen() {
     }
   }
 
-  // Force scroll — used only when a new question is submitted so the new bubble is visible.
+  // Force scroll — used only when a new question is submitted.
   function forceScrollToBottom() {
     requestAnimationFrame(() => {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
     });
+  }
+
+  function stop() {
+    abortRef.current?.abort();
   }
 
   function newChat() {
@@ -99,26 +104,32 @@ export default function ChatScreen() {
     });
   }
 
+  // Edit a question: remove that turn + all turns after it, pre-fill the input
+  function editQuestion(index: number) {
+    const q = turns[index].question;
+    setTurns((prev) => prev.slice(0, index));
+    setEditPrefill(q);
+  }
+
   async function send(question: string) {
     setBusy(true);
     setTurns((prev) => [...prev, emptyTurn(question)]);
-    forceScrollToBottom(); // always show the new question bubble
+    forceScrollToBottom();
+
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     const handle = (e: StreamEvent) => {
       switch (e.type) {
         case "session":
           setSessionId(e.session_id);
           break;
-        case "info": {
-          const infoText = e.text
-            ?? (e.tables?.length ? `Searching: ${e.tables.join(", ")}` : null)
-            ?? (e.keywords?.length ? `Keywords: ${e.keywords.join(", ")}` : null)
-            ?? (e.stage === "intent" ? "Analysing intent…" : null)
-            ?? (e.stage === "retrieval" ? "Retrieving context…" : null)
-            ?? (e.stage ? `${e.stage}…` : "Processing…");
-          patchLast((t) => ({ ...t, info: [...t.info, infoText] }));
+        case "info":
+          patchLast((t) => ({
+            ...t,
+            info: [...t.info, e.text ?? `${e.stage}: ${(e.tables ?? e.keywords ?? []).join(", ")}`],
+          }));
           break;
-        }
         case "thinking":
           patchLast((t) => ({ ...t, thinking: t.thinking + e.text }));
           break;
@@ -149,19 +160,26 @@ export default function ChatScreen() {
           patchLast((t) => ({ ...t, error: e.text, sql: e.sql ?? t.sql }));
           break;
         case "done":
+          // Unlock the UI immediately — follow-up suggestions arrive after this
+          patchLast((t) => ({ ...t, streaming: false }));
+          setBusy(false);
+          refreshSessions();
           break;
       }
       scrollToBottom();
     };
 
     try {
-      await askStream({ question, session_id: sessionId, model, thinking }, handle);
-    } catch (err) {
-      patchLast((t) => ({ ...t, error: `Connection error: ${String(err)}` }));
+      await askStream({ question, session_id: sessionId, model, thinking }, handle, controller.signal);
+    } catch (err: any) {
+      if (err?.name !== "AbortError") {
+        patchLast((t) => ({ ...t, error: `Connection error: ${String(err)}` }));
+      }
     } finally {
+      abortRef.current = null;
+      // Fallback: ensure busy is cleared even if done event wasn't received
       patchLast((t) => ({ ...t, streaming: false }));
       setBusy(false);
-      refreshSessions();
     }
   }
 
@@ -170,9 +188,13 @@ export default function ChatScreen() {
       <Sidebar sessions={sessions} onNewChat={newChat} onLoadSession={loadSession} refresh={refreshSessions} />
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        <Header model={model} setModel={setModel} thinking={thinking} setThinking={setThinking} busy={busy} />
+        <Header
+          model={model} setModel={setModel}
+          thinking={thinking} setThinking={setThinking}
+          busy={busy} onStop={stop}
+        />
 
-        {/* ── Feature 2: Progress bar ── */}
+        {/* Progress bar */}
         <div className="relative h-0.5 bg-slate-800">
           {busy && (
             <div className="absolute inset-0 animate-progress bg-gradient-to-r from-brand-600 via-blue-400 to-brand-600 bg-[length:200%_100%]" />
@@ -197,26 +219,33 @@ export default function ChatScreen() {
                   onSend={send}
                   isLast={i === turns.length - 1}
                   onRetry={t.error ? () => send(t.question) : undefined}
+                  onEdit={() => editQuestion(i)}
                 />
               ))}
             </div>
           )}
         </div>
 
-        <MessageInput onSend={send} busy={busy} />
+        <MessageInput
+          onSend={send}
+          busy={busy}
+          prefill={editPrefill}
+          onPrefillConsumed={() => setEditPrefill("")}
+        />
       </div>
     </div>
   );
 }
 
 function Header({
-  model, setModel, thinking, setThinking, busy,
+  model, setModel, thinking, setThinking, busy, onStop,
 }: {
   model: "sonnet" | "opus";
   setModel: (m: "sonnet" | "opus") => void;
   thinking: boolean;
   setThinking: (v: boolean) => void;
   busy: boolean;
+  onStop: () => void;
 }) {
   return (
     <header className="flex items-center gap-3 border-b border-slate-700/60 bg-slate-900/80 backdrop-blur-sm px-4 py-2.5">
@@ -236,6 +265,16 @@ function Header({
         </div>
       </div>
       <div className="ml-auto flex items-center gap-2">
+        {/* Stop button — only visible while streaming */}
+        {busy && (
+          <button
+            onClick={onStop}
+            className="flex items-center gap-1.5 rounded-lg border border-red-700/60 bg-red-950/40 px-3 py-1.5 text-xs font-semibold text-red-400 transition-colors hover:bg-red-900/50 hover:text-red-300"
+          >
+            <span className="inline-block h-2 w-2 rounded-sm bg-red-400" />
+            Stop
+          </button>
+        )}
         <div className="flex rounded-lg border border-slate-700 p-0.5 text-xs">
           {(["sonnet", "opus"] as const).map((m) => (
             <button
@@ -265,14 +304,16 @@ function Header({
 }
 
 function TurnView({
-  turn, onSend, isLast, onRetry,
+  turn, onSend, isLast, onRetry, onEdit,
 }: {
   turn: AssistantTurn;
   onSend: (q: string) => void;
   isLast: boolean;
   onRetry?: () => void;
+  onEdit?: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [hovered, setHovered] = useState(false);
 
   async function copyAnswer() {
     await navigator.clipboard.writeText(turn.answer);
@@ -283,7 +324,26 @@ function TurnView({
   return (
     <div>
       {/* User message */}
-      <div className="flex justify-end">
+      <div
+        className="flex items-center justify-end gap-2"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
+        {/* Edit button — fades in when row is hovered */}
+        {onEdit && (
+          <button
+            onClick={onEdit}
+            title="Edit this question"
+            className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-slate-500 transition-all duration-150 hover:bg-slate-800 hover:text-slate-200 ${
+              hovered ? "opacity-100" : "opacity-0 pointer-events-none"
+            }`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+            </svg>
+            Edit
+          </button>
+        )}
         <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-gradient-to-br from-brand-600 to-brand-700 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-brand-900/30">
           {turn.question}
         </div>
@@ -317,14 +377,13 @@ function TurnView({
           </div>
         )}
 
-        {/* ── Feature 1: Glassmorphism answer card + Feature 5: Copy button ── */}
+        {/* Glassmorphism answer card + Copy button */}
         {turn.answer && (
           <div className="group relative mt-2">
             <div className="rounded-2xl rounded-bl-sm border border-slate-700/50 bg-slate-800/60 px-5 py-4 shadow-xl shadow-slate-950/40 backdrop-blur-sm ring-1 ring-white/5 prose prose-sm prose-invert max-w-none prose-p:my-1.5 prose-ul:my-1.5 prose-li:my-0.5 prose-strong:font-bold prose-strong:text-white prose-headings:font-bold prose-headings:text-white font-medium text-slate-100 text-sm overflow-x-auto">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
-                  // Blinking cursor appended to last paragraph while streaming
                   p: ({ children, ...props }) => (
                     <p {...props}>
                       {children}
@@ -371,7 +430,6 @@ function TurnView({
             </button>
           </div>
         )}
-
 
         {turn.streaming && !turn.thinking && !turn.sql && !turn.answer && (
           <div className="mt-2 flex items-center gap-2 text-sm text-slate-500">
