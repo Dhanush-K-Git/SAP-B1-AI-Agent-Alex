@@ -222,6 +222,34 @@ async def run_question(
         if any(("UNION ALL detected" in w or "FROM (subquery) detected" in w) for w in san_warnings2):
             yield {"type": "error", "text": "Could not generate a valid query for this question. Please rephrase it as a simpler question.", "sql": sql}
             return
+        # If CURRENT_DATE retry didn't actually fix it, try once more with a stronger prompt
+        if _has_current_date and any("CURRENT_DATE detected" in w for w in san_warnings2):
+            yield {"type": "info", "stage": "retry", "text": "CURRENT_DATE still present — retrying with stronger date anchor instruction…"}
+            yield {"type": "sql_reset"}
+            text_buf.clear()
+            stronger_note = (
+                "\n\nCRITICAL — DO NOT USE CURRENT_DATE AT ALL. The data in this SAP B1 database "
+                "ends around 2025-03-25. CURRENT_DATE is today's date and will return ZERO rows. "
+                "You MUST use: ADD_MONTHS((SELECT MAX(\"DocDate\") FROM \"OQUT\"), -12) "
+                "Replace every single occurrence of CURRENT_DATE with a MAX-date subquery. "
+                "If you use CURRENT_DATE this query WILL FAIL."
+            )
+            async for kind, delta in claude.stream_sql(
+                model=model, thinking=False,
+                system=claude.sql_system_prompt,
+                user=user + stronger_note,
+            ):
+                if kind == "text":
+                    text_buf.append(delta)
+                    yield {"type": "sql_token", "text": delta}
+            full_text = "".join(text_buf)
+            sql = extract_sql(full_text)
+            sql, san_warnings3 = sanitize_sql(sql)
+            for w in san_warnings3:
+                yield {"type": "info", "stage": "sanitize", "text": w}
+            if any("CURRENT_DATE detected" in w for w in san_warnings3):
+                yield {"type": "error", "text": "Could not generate a valid date-anchored query. Please try rephrasing your question.", "sql": sql}
+                return
 
     # 6c. Validate — sqlglot structural check
     ok, err = validate_sql(sql)
