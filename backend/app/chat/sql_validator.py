@@ -241,11 +241,20 @@ def _keyword_fallback(sql: str) -> tuple[bool, str]:
 
 def enforce_row_limit(sql: str, cap: int) -> str:
     """
-    Append a LIMIT if the query has none, so a forgotten LIMIT can't stream millions
-    of rows over HTTP (OINV has 3M+ rows). Harmless on aggregates. HANA puts LIMIT last.
+    Safety backstop only — appends LIMIT only if the query has none AND it looks like
+    a detail/row-level query that could return unbounded rows.
+    Aggregates (GROUP BY without row-level cols) are left untouched.
+    Claude should add LIMIT only when user asks for top N — this just prevents runaway queries.
     """
     s = sql.strip().rstrip(";").strip()
     if re.search(r"\bLIMIT\b", s, re.IGNORECASE) or re.search(r"\bFETCH\s+FIRST\b", s, re.IGNORECASE):
+        return s
+    # Don't cap pure aggregates — COUNT(*), SUM, AVG with no GROUP BY return 1 row
+    is_pure_aggregate = (
+        re.search(r"\bGROUP\s+BY\b", s, re.IGNORECASE) is None
+        and re.search(r"\b(COUNT|SUM|AVG|MAX|MIN)\s*\(", s, re.IGNORECASE) is not None
+    )
+    if is_pure_aggregate:
         return s
     return f"{s}\nLIMIT {cap}"
 

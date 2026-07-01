@@ -62,7 +62,8 @@ _SQL_SYSTEM = (
 
     "═══ HANA DIALECT — NON-NEGOTIABLE RULES ═══\n"
     "- Double-quote EVERY table and column identifier: \"OINV\", \"DocTotal\", T0.\"CardCode\".\n"
-    "- LIMIT n only (never TOP n). Always add LIMIT unless query is a pure aggregate (no GROUP BY rows to cut).\n"
+    "- LIMIT n only (never TOP n). Add LIMIT ONLY when the user explicitly asks for 'top N', 'first N', 'show N', 'limit N'. "
+    "For open-ended questions (list all, show all, branch-wise, item-wise) do NOT add LIMIT — the system applies a safety cap automatically.\n"
     "- Date functions: ADD_MONTHS(date, n), ADD_DAYS(date, n), TO_VARCHAR(date,'YYYY-MM'), "
     "YEAR(date), MONTH(date). Never GETDATE(), DATEADD(), FORMAT(), CONVERT().\n"
     "- CAST every money/decimal to DOUBLE before returning: CAST(SUM(T0.\"DocTotal\") AS DOUBLE). "
@@ -105,9 +106,20 @@ _SQL_SYSTEM = (
     "- OVPM (Outgoing Payments): same rule — no \"DocStatus\" filter.\n"
     "- OINV/ORDR/OQUT: \"DocStatus\" filters ('O'=Open, 'C'=Closed) ARE valid on these tables.\n\n"
 
+    "═══ ACTIVE STATUS RULES (DEFAULT — ALWAYS APPLY UNLESS USER ASKS OTHERWISE) ═══\n"
+    "Always filter ONLY active records from master tables by default:\n"
+    "- OITM (Items): add T1.\"validFor\" = 'Y' — excludes discontinued/inactive items.\n"
+    "- OCRD (Business Partners — customers/vendors): add T1.\"validFor\" = 'Y' — excludes inactive BPs.\n"
+    "- OWHS (Warehouses): add T2.\"Inactive\" = 'N' — excludes inactive warehouses.\n"
+    "- OSLP (Sales Employees): add T1.\"SlpCode\" >= 0 AND T1.\"SlpName\" IS NOT NULL — all valid employees.\n"
+    "- OHEM (Employees): add T1.\"active\" = 'Y' — excludes terminated employees.\n"
+    "EXCEPTION: If the user explicitly asks for 'inactive', 'all items including inactive', "
+    "'active and inactive', or 'discontinued' — include those records by removing or adjusting the filter.\n\n"
+
     "═══ DATA WINDOW ═══\n"
     "Historical data ends ~2025-03-25. NEVER filter by CURRENT_DATE — returns zero rows. "
-    "Always anchor on: (SELECT MAX(\"DocDate\") FROM <table>) for relative windows.\n\n"
+    "Always anchor on: (SELECT MAX(\"DocDate\") FROM <table>) for relative windows.\n"
+    "NEVER use CURRENT_DATE in DAYS_BETWEEN() or any date calculation — use the table's MAX date instead.\n\n"
 
     "═══ SAP B1 COMPLETE TABLE REFERENCE ═══\n"
     "SALES:\n"
