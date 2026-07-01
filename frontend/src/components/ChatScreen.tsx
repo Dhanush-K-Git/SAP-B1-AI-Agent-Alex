@@ -7,8 +7,6 @@ import type { AssistantTurn, SessionInfo, StreamEvent } from "../types";
 import Sidebar from "./Sidebar";
 import MessageInput from "./MessageInput";
 import ExampleQuestions from "./ExampleQuestions";
-import ThinkingPanel from "./ThinkingPanel";
-import SqlPanel from "./SqlPanel";
 import ResultView from "./ResultView";
 
 // Minimal client-side viz detection for restoring history turns
@@ -351,15 +349,6 @@ function TurnView({
 
       {/* Assistant response */}
       <div className="mt-3">
-        {turn.info.length > 0 && (
-          <div className="mb-1.5 text-[11px] font-medium text-slate-600">
-            {turn.info[turn.info.length - 1]}
-          </div>
-        )}
-
-        <ThinkingPanel text={turn.thinking} streaming={turn.streaming && !turn.answer} />
-        <SqlPanel sql={turn.sql} streaming={turn.streaming && !turn.result && !turn.answer} />
-
         {turn.result && turn.viz && <ResultView data={turn.result} viz={turn.viz} />}
 
         {turn.error && (
@@ -431,7 +420,7 @@ function TurnView({
           </div>
         )}
 
-        {turn.streaming && !turn.thinking && !turn.sql && !turn.answer && (
+        {turn.streaming && !turn.answer && (
           <div className="mt-2 flex items-center gap-2 text-sm text-slate-500">
             <span className="inline-flex gap-1">
               <span className="animate-bounce" style={{ animationDelay: "0ms" }}>·</span>
@@ -439,6 +428,26 @@ function TurnView({
               <span className="animate-bounce" style={{ animationDelay: "300ms" }}>·</span>
             </span>
             Alex is thinking…
+          </div>
+        )}
+
+        {/* Follow-up questions */}
+        {turn.suggestions.length > 0 && (
+          <div className="mt-3">
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              Follow-up questions
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {turn.suggestions.map((q, i) => (
+                <button
+                  key={i}
+                  onClick={() => onSend(q)}
+                  className="rounded-lg border border-slate-700/60 bg-slate-800/50 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:border-brand-600/60 hover:bg-brand-950/40 hover:text-brand-300"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>

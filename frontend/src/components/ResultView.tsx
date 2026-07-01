@@ -42,10 +42,30 @@ function isStatusValue(col: string, val: unknown): boolean {
   return val.toLowerCase() in STATUS_STYLES;
 }
 
+const CURRENCY_COL = /total|amount|price|value|paid|sum|balance|budget|cost|revenue|sales|invoice/i;
+
+function formatIndianNumber(n: number): string {
+  // Indian comma system: last 3 digits, then groups of 2
+  const isNeg = n < 0;
+  const abs = Math.abs(n);
+  const [intPart, decPart] = abs.toFixed(2).split(".");
+  const lastThree = intPart.slice(-3);
+  const rest = intPart.slice(0, -3);
+  const formatted =
+    rest.length > 0
+      ? rest.replace(/\B(?=(\d{2})+(?!\d))/g, ",") + "," + lastThree
+      : lastThree;
+  const result = decPart === "00" ? formatted : `${formatted}.${decPart}`;
+  return (isNeg ? "-" : "") + result;
+}
+
 function formatCell(col: string, v: unknown): React.ReactNode {
   if (v == null) return <span className="text-slate-600">—</span>;
   if (isStatusValue(col, v)) return <StatusBadge value={String(v)} />;
-  if (typeof v === "number") return v.toLocaleString();
+  if (typeof v === "number") {
+    if (CURRENCY_COL.test(col)) return "₹" + formatIndianNumber(v);
+    return v.toLocaleString("en-IN");
+  }
   return String(v);
 }
 
